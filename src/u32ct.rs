@@ -1,9 +1,11 @@
+use serde::{Deserialize, Serialize};
 use tfhe::boolean::{
     ciphertext::Ciphertext,
     client_key::ClientKey,
     server_key::{BinaryBooleanGates, ServerKey},
 };
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct U32Ct {
     inner: [Ciphertext; 32], // least significant bit
 }

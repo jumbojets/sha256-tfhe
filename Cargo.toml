@@ -6,3 +6,7 @@ edition = "2021"
 [dependencies.tfhe]
 version = "0.1.8"
 features = ["boolean"]
+
+[dependencies.serde]
+version = "1.0.152"
+features = ["derive"]
