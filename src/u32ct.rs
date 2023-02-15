@@ -1,5 +1,3 @@
-use std::mem::{self, MaybeUninit};
-
 use tfhe::shortint::{Ciphertext, ClientKey, ServerKey};
 
 // TODO: parallelize many of the for loops here with rayon
@@ -10,13 +8,7 @@ pub struct U32Ct {
 
 impl U32Ct {
     pub fn encrypt(x: u32, client_key: &ClientKey) -> Self {
-        let mut inner: [MaybeUninit<Ciphertext>; 8] =
-            unsafe { MaybeUninit::uninit().assume_init() };
-        for (elem, nibble) in inner[..].iter_mut().zip(nibbles(x)) {
-            let short = client_key.encrypt(nibble.into());
-            elem.write(short);
-        }
-        let inner = unsafe { mem::transmute(inner) };
+        let inner = nibbles(x).map(|n| client_key.encrypt(n.into()));
         Self { inner }
     }
 
@@ -24,7 +16,7 @@ impl U32Ct {
         let mut plaintext = 0;
         for short in self.inner.iter().rev() {
             plaintext <<= 4;
-            let nibble = client_key.decrypt(&short) as u32;
+            let nibble = client_key.decrypt(short) as u32;
             plaintext |= nibble;
         }
         plaintext
@@ -41,13 +33,11 @@ impl U32Ct {
     // }
 
     pub fn bitxor(&mut self, other: &mut Self, server_key: &ServerKey) -> Self {
-        let mut r_inner: [MaybeUninit<Ciphertext>; 8] =
-            unsafe { MaybeUninit::uninit().assume_init() };
-        for i in 0..8 {
-            let ri = server_key.smart_bitand(&mut self.inner[i], &mut other.inner[i]);
-            r_inner[i].write(ri);
-        }
-        let inner = unsafe { mem::transmute(r_inner) };
+        let inner = self
+            .inner
+            .each_mut()
+            .zip(other.inner.each_mut())
+            .map(|(l, r)| server_key.smart_bitxor(l, r));
         Self { inner }
     }
 
@@ -57,19 +47,17 @@ impl U32Ct {
     }
 
     pub fn bitand(&mut self, other: &mut Self, server_key: &ServerKey) -> Self {
-        let mut r_inner: [MaybeUninit<Ciphertext>; 8] =
-            unsafe { MaybeUninit::uninit().assume_init() };
-        for i in 0..8 {
-            let ri = server_key.smart_bitand(&mut self.inner[i], &mut other.inner[i]);
-            r_inner[i].write(ri);
-        }
-        let inner = unsafe { mem::transmute(r_inner) };
+        let inner = self
+            .inner
+            .each_mut()
+            .zip(other.inner.each_mut())
+            .map(|(l, r)| server_key.smart_bitand(l, r));
         Self { inner }
     }
 
     pub fn bitand_scalar(&self, other: u32, server_key: &ServerKey) -> Self {
         let ops = nibbles(other).map(|n| Box::new(move |x| x & (n as u64)) as _);
-        self.unary_op_per_nibble_unique(ops, &server_key)
+        self.unary_op_per_nibble_unique(ops, server_key)
     }
 
     // TODO: rotate left/right by scalar
@@ -84,39 +72,30 @@ impl U32Ct {
         ops: [Box<dyn Fn(u64) -> u64>; 8],
         server_key: &ServerKey,
     ) -> Self {
-        let mut r_inner: [MaybeUninit<Ciphertext>; 8] =
-            unsafe { MaybeUninit::uninit().assume_init() };
-        for i in 0..8 {
-            let acc = server_key.generate_accumulator(&ops[i]);
-            let ri = server_key.keyswitch_programmable_bootstrap(&self.inner[i], &acc);
-            r_inner[i].write(ri);
-        }
-        let inner = unsafe { mem::transmute(r_inner) };
+        let inner = self.inner.each_ref().zip(ops).map(|(nib, op)| {
+            let acc = server_key.generate_accumulator(&op);
+            server_key.keyswitch_programmable_bootstrap(nib, &acc)
+        });
         Self { inner }
     }
 
     #[inline]
     fn unary_op_per_nibble(&self, op: impl Fn(u64) -> u64, server_key: &ServerKey) -> Self {
-        let mut r_inner: [MaybeUninit<Ciphertext>; 8] =
-            unsafe { MaybeUninit::uninit().assume_init() };
         let acc = server_key.generate_accumulator(op);
-        for i in 0..8 {
-            let ri = server_key.keyswitch_programmable_bootstrap(&self.inner[i], &acc);
-            r_inner[i].write(ri);
-        }
-        let inner = unsafe { mem::transmute(r_inner) };
+        let inner = self
+            .inner
+            .each_ref()
+            .map(|nib| server_key.keyswitch_programmable_bootstrap(nib, &acc));
         Self { inner }
     }
 }
 
 fn nibbles(mut x: u32) -> [u32; 8] {
-    let mut r = [0u32; 8];
-    for i in 0..8 {
+    [0u32; 8].map(|_| {
         let nibble = x & 0b1111;
         x >>= 4;
-        r[i] = nibble;
-    }
-    r
+        nibble
+    })
 }
 
 #[cfg(test)]
@@ -168,6 +147,11 @@ mod tests {
         let mut ct2 = U32Ct::encrypt(234252, &client_key);
         let r = ct1.bitand(&mut ct2, &server_key);
         let pt = r.decrypt(&client_key);
+        let a = 4206143820u32;
+        let b = 234252u32;
+        let c = 256u32;
+        let d = 4206312000u32;
+        println!("{a:b}\n{b:b}\n{c:b}\n{d:b}\n");
         assert_eq!(pt, 4206143820 & 234252);
     }
 

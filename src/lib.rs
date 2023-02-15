@@ -1,3 +1,5 @@
+#![feature(array_zip, array_methods)]
+
 mod constants;
 mod u32ct;
 
@@ -5,7 +7,6 @@ use tfhe::shortint::{ClientKey, ServerKey};
 
 type MessageCiphertext = ();
 type HashCiphertext = ();
-
 
 pub fn encrypt_message(message: &[u8], client_key: &ClientKey) -> MessageCiphertext {
     todo!()
