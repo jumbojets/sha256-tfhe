@@ -1,7 +1,5 @@
 use tfhe::shortint::{Ciphertext, ClientKey, ServerKey};
 
-// TODO: parallelize many of the for loops here with rayon
-
 pub struct U32Ct {
     inner: [Ciphertext; 8], // least significant nibble first
 }
@@ -23,8 +21,8 @@ impl U32Ct {
     }
 
     // pub fn add(&mut self, other: &mut Self, server_key: &ServerKey) -> Self {
-    //     let r0 = server_key.unchecked_bitxor(&mut self.inner[0], &mut other.inner[0]);
-    //     let carry = server_key.carry_extract(&r0);
+    //     let r0 = server_key.unchecked_bitxor(&mut self.inner[0], &mut
+    // other.inner[0]);     let carry = server_key.carry_extract(&r0);
     //     todo!()
     // }
 
@@ -42,6 +40,8 @@ impl U32Ct {
     }
 
     pub fn bitxor_scalar(&self, other: u32, server_key: &ServerKey) -> Self {
+        // TODO: could be worth seeing if ServerKey::create_trivial and normal bitxor is
+        // fast than w/o pbs. also can try this for neg and bitand
         let ops = nibbles(other).map(|n| Box::new(move |x| x ^ (n as u64)) as _);
         self.unary_op_per_nibble_unique(ops, server_key)
     }
@@ -82,10 +82,8 @@ impl U32Ct {
     #[inline]
     fn unary_op_per_nibble(&self, op: impl Fn(u64) -> u64, server_key: &ServerKey) -> Self {
         let acc = server_key.generate_accumulator(op);
-        let inner = self
-            .inner
-            .each_ref()
-            .map(|nib| server_key.keyswitch_programmable_bootstrap(nib, &acc));
+        let inner =
+            self.inner.each_ref().map(|nib| server_key.keyswitch_programmable_bootstrap(nib, &acc));
         Self { inner }
     }
 }
@@ -112,7 +110,7 @@ mod tests {
 
     #[test]
     fn test_encrypt_decrypt() {
-        let key = ClientKey::new(parameters::PARAM_MESSAGE_4_CARRY_1);
+        let key = ClientKey::new(parameters::PARAM_MESSAGE_4_CARRY_4);
         let ct = U32Ct::encrypt(0, &key);
         let pt = ct.decrypt(&key);
         assert_eq!(pt, 0);
@@ -123,53 +121,53 @@ mod tests {
 
     #[test]
     fn test_bitxor() {
-        let (client_key, server_key) = gen_keys(parameters::PARAM_MESSAGE_4_CARRY_1);
-        let mut ct1 = U32Ct::encrypt(4206143820, &client_key);
-        let mut ct2 = U32Ct::encrypt(234252, &client_key);
+        let (client_key, server_key) = gen_keys(parameters::PARAM_MESSAGE_4_CARRY_4);
+        let mut ct1 = U32Ct::encrypt(3472387250, &client_key);
+        let mut ct2 = U32Ct::encrypt(964349245, &client_key);
         let r = ct1.bitxor(&mut ct2, &server_key);
         let pt = r.decrypt(&client_key);
-        assert_eq!(pt, 4206143820 ^ 234252);
+        assert_eq!(pt, 3472387250 ^ 964349245);
     }
 
     #[test]
     fn test_bitxor_scalar() {
-        let (client_key, server_key) = gen_keys(parameters::PARAM_MESSAGE_4_CARRY_1);
-        let ct = U32Ct::encrypt(4206143820, &client_key);
-        let r = ct.bitxor_scalar(234252, &server_key);
+        let (client_key, server_key) = gen_keys(parameters::PARAM_MESSAGE_4_CARRY_4);
+        let ct = U32Ct::encrypt(3472387250, &client_key);
+        let r = ct.bitxor_scalar(964349245, &server_key);
         let pt = r.decrypt(&client_key);
-        assert_eq!(pt, 4206143820 ^ 234252);
+        assert_eq!(pt, 3472387250 ^ 964349245);
     }
 
     #[test]
     fn test_bitand() {
-        let (client_key, server_key) = gen_keys(parameters::PARAM_MESSAGE_4_CARRY_1);
-        let mut ct1 = U32Ct::encrypt(4206143820, &client_key);
-        let mut ct2 = U32Ct::encrypt(234252, &client_key);
+        let (client_key, server_key) = gen_keys(parameters::PARAM_MESSAGE_4_CARRY_4);
+        let mut ct1 = U32Ct::encrypt(3472387250, &client_key);
+        let mut ct2 = U32Ct::encrypt(964349245, &client_key);
         let r = ct1.bitand(&mut ct2, &server_key);
         let pt = r.decrypt(&client_key);
-        let a = 4206143820u32;
-        let b = 234252u32;
-        let c = 256u32;
+        let a = 3472387250u32;
+        let b = 964349245u32;
+        let c = 15728880u32;
         let d = 4206312000u32;
         println!("{a:b}\n{b:b}\n{c:b}\n{d:b}\n");
-        assert_eq!(pt, 4206143820 & 234252);
+        assert_eq!(pt, 3472387250 & 964349245);
     }
 
     #[test]
     fn test_bitand_scalar() {
-        let (client_key, server_key) = gen_keys(parameters::PARAM_MESSAGE_4_CARRY_1);
-        let ct = U32Ct::encrypt(4206143820, &client_key);
-        let r = ct.bitand_scalar(234252, &server_key);
+        let (client_key, server_key) = gen_keys(parameters::PARAM_MESSAGE_4_CARRY_4);
+        let ct = U32Ct::encrypt(3472387250, &client_key);
+        let r = ct.bitand_scalar(964349245, &server_key);
         let pt = r.decrypt(&client_key);
-        assert_eq!(pt, 4206143820 & 234252);
+        assert_eq!(pt, 3472387250 & 964349245);
     }
 
     #[test]
     fn test_bitnot() {
-        let (client_key, server_key) = gen_keys(parameters::PARAM_MESSAGE_4_CARRY_1);
-        let ct = U32Ct::encrypt(4206143820, &client_key);
+        let (client_key, server_key) = gen_keys(parameters::PARAM_MESSAGE_4_CARRY_4);
+        let ct = U32Ct::encrypt(3472387250, &client_key);
         let r = ct.bitnot(&server_key);
         let pt = r.decrypt(&client_key);
-        assert_eq!(pt, !4206143820);
+        assert_eq!(pt, !3472387250);
     }
 }
