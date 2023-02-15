@@ -42,9 +42,9 @@ pub fn ch(x: &U32Ct, y: &U32Ct, z: &U32Ct, server_key: &ServerKey) -> U32Ct {
 }
 
 pub fn maj(x: &U32Ct, y: &U32Ct, z: &U32Ct, server_key: &ServerKey) -> U32Ct {
-     let left = x.bitand(y, server_key);
-     let middle = x.bitand(z, server_key);
-     let right = y.bitand(z, server_key);
-     let fold_l = left.bitxor(&middle, server_key);
-     fold_l.bitxor(&right, server_key)
+    let left = x.bitand(y, server_key);
+    let middle = x.bitand(z, server_key);
+    let right = y.bitand(z, server_key);
+    let fold_l = left.bitxor(&middle, server_key);
+    fold_l.bitxor(&right, server_key)
 }

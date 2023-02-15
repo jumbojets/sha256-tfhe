@@ -12,13 +12,11 @@ pub struct U32Ct {
 
 impl U32Ct {
     pub fn encrypt(x: u32, client_key: &ClientKey) -> Self {
-        let inner = bits(x).map(|n| client_key.encrypt(n));
-        Self { inner }
+        Self { inner: bits(x).map(|n| client_key.encrypt(n)) }
     }
 
     pub fn trivial_encrypt(x: u32, server_key: &ServerKey) -> Self {
-        let inner = bits(x).map(|b| server_key.trivial_encrypt(b));
-        Self { inner }
+        Self { inner: bits(x).map(|b| server_key.trivial_encrypt(b)) }
     }
 
     pub fn decrypt(&self, client_key: &ClientKey) -> u32 {
@@ -63,8 +61,7 @@ impl U32Ct {
     }
 
     pub fn bitnot(&self, server_key: &ServerKey) -> Self {
-        let inner = self.inner.each_ref().map(|b| server_key.not(b));
-        Self { inner }
+        Self { inner: self.inner.each_ref().map(|b| server_key.not(b)) }
     }
 
     pub fn rotate_right(&self, shift: usize) -> Self {
