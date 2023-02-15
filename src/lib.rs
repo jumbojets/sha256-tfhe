@@ -3,19 +3,19 @@
 mod constants;
 mod u32ct;
 
-use tfhe::shortint::{ClientKey, ServerKey};
+use tfhe::boolean::{client_key::ClientKey, server_key::ServerKey};
 
 type MessageCiphertext = ();
 type HashCiphertext = ();
 
-pub fn encrypt_message(message: &[u8], client_key: &ClientKey) -> MessageCiphertext {
+pub fn encrypt_message(_message: &[u8], _client_key: &ClientKey) -> MessageCiphertext {
     todo!()
 }
 
-pub fn sha256_tfhe(message_ct: MessageCiphertext, server_key: &ServerKey) -> HashCiphertext {
+pub fn sha256_tfhe(_message_ct: MessageCiphertext, _server_key: &ServerKey) -> HashCiphertext {
     todo!()
 }
 
-pub fn decrypt_hash(hash_ct: HashCiphertext, client_key: &ClientKey) -> [u8; 32] {
+pub fn decrypt_hash(_hash_ct: HashCiphertext, _client_key: &ClientKey) -> [u8; 32] {
     todo!()
 }
