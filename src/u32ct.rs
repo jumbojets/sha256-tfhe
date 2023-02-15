@@ -52,10 +52,25 @@ impl U32Ct {
         self.bitand(&other, server_key)
     }
 
-    // TODO: rotate left/right by scalar
-
     pub fn bitnot(&self, server_key: &ServerKey) -> Self {
         let inner = self.inner.each_ref().map(|b| server_key.not(b));
+        Self { inner }
+    }
+
+    pub fn rotate_right(&self, shift: usize) -> Self {
+        // rotating the integer right requires moving ciphertexts left
+        let mut inner = self.inner.clone();
+        inner.rotate_left(shift);
+        Self { inner }
+    }
+
+    pub fn shift_right(&self, shift: usize, server_key: &ServerKey) -> Self {
+        // shifting the integer right requires moving ciphertexts left
+        let mut inner = self.inner.clone();
+        inner.rotate_left(shift);
+        for i in 0..shift {
+            inner[31 - i] = server_key.trivial_encrypt(false);
+        }
         Self { inner }
     }
 }
@@ -79,7 +94,7 @@ fn from_bits(bits: [bool; 32]) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use tfhe::boolean::{gen_keys, parameters};
+    use tfhe::boolean::gen_keys;
 
     use super::*;
 
@@ -92,7 +107,7 @@ mod tests {
 
     #[test]
     fn test_encrypt_decrypt() {
-        let key = ClientKey::new(&parameters::DEFAULT_PARAMETERS);
+        let (key, _) = gen_keys();
         let ct = U32Ct::encrypt(0, &key);
         let pt = ct.decrypt(&key);
         assert_eq!(pt, 0);
@@ -151,5 +166,23 @@ mod tests {
         let r = ct.bitnot(&server_key);
         let pt = r.decrypt(&client_key);
         assert_eq!(pt, !3472387250);
+    }
+
+    #[test]
+    fn test_rotate_right() {
+        let (key, _) = gen_keys();
+        let ct = U32Ct::encrypt(3472387250, &key);
+        let r = ct.rotate_right(12);
+        let pt = r.decrypt(&key);
+        assert_eq!(pt, 3472387250u32.rotate_right(12));
+    }
+
+    #[test]
+    fn test_shift_right() {
+        let (client_key, server_key) = gen_keys();
+        let ct = U32Ct::encrypt(3472387250, &client_key);
+        let r = ct.shift_right(12, &server_key);
+        let pt = r.decrypt(&client_key);
+        assert_eq!(pt, 3472387250u32 >> 12);
     }
 }
