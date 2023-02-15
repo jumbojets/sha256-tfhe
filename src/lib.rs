@@ -14,24 +14,25 @@ use u32ct::*;
 use util::*;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct MessageCt {
+pub struct PreimageCt {
     inner: Vec<U32Ct>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct HashCt {
     inner: [U32Ct; 8],
 }
 
-pub fn encrypt_message(mut message: Vec<u8>, client_key: &ClientKey) -> MessageCt {
+pub fn encrypt_preimage(mut message: Vec<u8>, client_key: &ClientKey) -> PreimageCt {
     // padding
     let length = message.len() as u64;
     message.push(0x80);
-    while message.len() * 8 + 64 != 0 {
+    while (message.len() * 8 + 64) % 512 != 0 {
         message.push(0x00);
     }
     let len_be_bytes = length.to_be_bytes();
     message.extend(&len_be_bytes);
-    assert!(message.len() % 512 == 0);
+    assert_eq!((message.len() * 8) % 512, 0);
     // encrypt using the client key
     let inner = message
         .into_iter()
@@ -39,16 +40,16 @@ pub fn encrypt_message(mut message: Vec<u8>, client_key: &ClientKey) -> MessageC
         .map(u32::from_be_bytes)
         .map(|x| U32Ct::encrypt(x, client_key))
         .collect::<Vec<_>>();
-    MessageCt { inner }
+    PreimageCt { inner }
 }
 
-pub fn sha256_tfhe(message_ct: &MessageCt, server_key: &ServerKey) -> HashCt {
-    let message_ct = &message_ct.inner;
-    let message_length = message_ct.len();
-    assert!(message_length % 16 == 0);
+pub fn sha256_tfhe(preimage_ct: &PreimageCt, server_key: &ServerKey) -> HashCt {
+    let preimage_ct = &preimage_ct.inner;
+    let message_length = preimage_ct.len();
+    assert_eq!(message_length % 16, 0);
     let blocks = message_length / 16;
 
-    let mut message_index = 0;
+    let mut preimage_index = 0;
 
     let mut h0 = U32Ct::trivial_encrypt(H[0], server_key);
     let mut h1 = U32Ct::trivial_encrypt(H[1], server_key);
@@ -59,7 +60,9 @@ pub fn sha256_tfhe(message_ct: &MessageCt, server_key: &ServerKey) -> HashCt {
     let mut h6 = U32Ct::trivial_encrypt(H[6], server_key);
     let mut h7 = U32Ct::trivial_encrypt(H[7], server_key);
 
-    for _ in 0..blocks {
+    for asdf in 0..blocks {
+        println!("asdf: {asdf}");
+
         let mut a = h0.clone();
         let mut b = h1.clone();
         let mut c = h2.clone();
@@ -70,8 +73,9 @@ pub fn sha256_tfhe(message_ct: &MessageCt, server_key: &ServerKey) -> HashCt {
         let mut h = h7.clone();
 
         let mut x = array::from_fn::<_, 16, _>(|i| {
-            let xi = &message_ct[message_index];
-            message_index += 1;
+            println!("i: {i}");
+            let xi = &preimage_ct[preimage_index];
+            preimage_index += 1;
 
             let mut t1 = h.clone();
             t1 = t1.add(&capsigma1(&e, server_key), server_key);
@@ -95,6 +99,7 @@ pub fn sha256_tfhe(message_ct: &MessageCt, server_key: &ServerKey) -> HashCt {
         });
 
         for i in 0..64 {
+            println!("i: {i}");
             let mut s0 = x[(i + 1) & 0x0f].clone();
             s0 = sigma0(&s0, server_key);
             let mut s1 = x[(i + 14) & 0x0f].clone();
@@ -134,6 +139,38 @@ pub fn sha256_tfhe(message_ct: &MessageCt, server_key: &ServerKey) -> HashCt {
     HashCt { inner: [h0, h1, h2, h3, h4, h5, h6, h7] }
 }
 
-pub fn decrypt_hash(_hash_ct: &HashCt, _client_key: &ClientKey) -> [u8; 32] {
-    todo!()
+pub fn decrypt_hash(hash_ct: &HashCt, client_key: &ClientKey) -> [u8; 32] {
+    hash_ct
+        .inner
+        .iter()
+        .map(|ct| ct.decrypt(client_key))
+        .map(u32::to_be_bytes)
+        .flatten()
+        .collect::<Vec<_>>()
+        .try_into()
+        .expect("to flatten into [u8; 32]")
+}
+
+#[cfg(test)]
+mod tests {
+    use sha2::{Sha256, Digest};
+    use tfhe::boolean::gen_keys;
+
+    use super::*;
+
+    #[test]
+    fn test_empty_input() {
+        let (client_key, server_key) = gen_keys();
+        let preimage = b"".to_vec();
+        let preimage_ct = encrypt_preimage(preimage.clone(), &client_key);
+        let hash_ct = sha256_tfhe(&preimage_ct, &server_key);
+        let hash = decrypt_hash(&hash_ct, &client_key);
+        let expected_hash = Sha256::digest(preimage);
+        assert_eq!(&hash, expected_hash.as_slice());
+    }
+
+    #[test]
+    fn test_larger_input() {
+        todo!()
+    }
 }

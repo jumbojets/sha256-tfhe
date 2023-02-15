@@ -10,3 +10,6 @@ features = ["boolean"]
 [dependencies.serde]
 version = "1.0.152"
 features = ["derive"]
+
+[dev-dependencies]
+sha2 = "0.10.6"
