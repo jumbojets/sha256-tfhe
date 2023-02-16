@@ -23,16 +23,9 @@ pub struct HashCt {
     inner: [U32Ct; 8],
 }
 
-pub fn encrypt_preimage(mut message: Vec<u8>, client_key: &ClientKey) -> PreimageCt {
+pub fn encrypt_preimage(message: Vec<u8>, client_key: &ClientKey) -> PreimageCt {
     // padding
-    let length = message.len() as u64;
-    message.push(0x80);
-    while (message.len() * 8 + 64) % 512 != 0 {
-        message.push(0x00);
-    }
-    let len_be_bytes = length.to_be_bytes();
-    message.extend(&len_be_bytes);
-    assert_eq!((message.len() * 8) % 512, 0);
+    let message = pad_message(message);
     // encrypt using the client key
     let inner = message
         .into_iter()
@@ -153,7 +146,7 @@ pub fn decrypt_hash(hash_ct: &HashCt, client_key: &ClientKey) -> [u8; 32] {
 
 #[cfg(test)]
 mod tests {
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
     use tfhe::boolean::gen_keys;
 
     use super::*;
@@ -171,6 +164,13 @@ mod tests {
 
     #[test]
     fn test_larger_input() {
+        let (client_key, server_key) = gen_keys();
+        let preimage = b"abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu".to_vec();
+        let preimage_ct = encrypt_preimage(preimage.clone(), &client_key);
+        let hash_ct = sha256_tfhe(&preimage_ct, &server_key);
+        let hash = decrypt_hash(&hash_ct, &client_key);
+        let expected_hash = Sha256::digest(preimage);
+        assert_eq!(&hash, expected_hash.as_slice());
         todo!()
     }
 }
