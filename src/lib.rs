@@ -80,7 +80,7 @@ pub fn sha256_tfhe(input_ct: &InputCiphertext, server_key: &ServerKey) -> Digest
         let mut w = array::from_fn::<_, 16, _>(|i| {
             let wi = input_ct.next().unwrap();
 
-            let k_w = k[i].add(&wi, server_key);
+            let k_w = k[i].add(wi, server_key);
             round(&mut alphabet, &k_w, server_key);
 
             alphabet.rotate_right(1);
@@ -88,6 +88,7 @@ pub fn sha256_tfhe(input_ct: &InputCiphertext, server_key: &ServerKey) -> Digest
             wi.clone()
         });
 
+        #[allow(clippy::needless_range_loop)]
         for i in 16..64 {
             let [wo0, wo1, wo9, wo14] =
                 w.get_many_mut([i % 16, (i + 1) % 16, (i + 9) % 16, (i + 14) % 16]).unwrap();
