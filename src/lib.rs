@@ -163,6 +163,17 @@ mod tests {
     }
 
     #[test]
+    fn test_small_input() {
+        let (client_key, server_key) = gen_keys();
+        let preimage = b"hello world".to_vec();
+        let preimage_ct = encrypt_preimage(preimage.clone(), &client_key);
+        let hash_ct = sha256_tfhe(&preimage_ct, &server_key);
+        let hash = decrypt_hash(&hash_ct, &client_key);
+        let expected_hash = Sha256::digest(preimage);
+        assert_eq!(&hash, expected_hash.as_slice());
+    }
+
+    #[test]
     fn test_larger_input() {
         let (client_key, server_key) = gen_keys();
         let preimage = b"abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu".to_vec();
@@ -171,6 +182,5 @@ mod tests {
         let hash = decrypt_hash(&hash_ct, &client_key);
         let expected_hash = Sha256::digest(preimage);
         assert_eq!(&hash, expected_hash.as_slice());
-        todo!()
     }
 }

@@ -33,31 +33,16 @@ impl U32Ct {
         Self { inner }
     }
 
-    pub fn add_scalar(&self, other: u32, server_key: &ServerKey) -> Self {
-        let other_trivial = Self::trivial_encrypt(other, server_key);
-        self.add(&other_trivial, server_key)
-    }
-
     pub fn bitxor(&self, other: &Self, server_key: &ServerKey) -> Self {
         let inner =
             self.inner.each_ref().zip(other.inner.each_ref()).map(|(l, r)| server_key.xor(l, r));
         Self { inner }
     }
 
-    pub fn bitxor_scalar(&self, other: u32, server_key: &ServerKey) -> Self {
-        let other_trivial = Self::trivial_encrypt(other, server_key);
-        self.bitxor(&other_trivial, server_key)
-    }
-
     pub fn bitand(&self, other: &Self, server_key: &ServerKey) -> Self {
         let inner =
             self.inner.each_ref().zip(other.inner.each_ref()).map(|(l, r)| server_key.and(l, r));
         Self { inner }
-    }
-
-    pub fn bitand_scalar(&self, other: u32, server_key: &ServerKey) -> Self {
-        let other_trivial = Self::trivial_encrypt(other, server_key);
-        self.bitand(&other_trivial, server_key)
     }
 
     pub fn bitnot(&self, server_key: &ServerKey) -> Self {
@@ -140,8 +125,9 @@ mod tests {
     #[test]
     fn test_bitxor() {
         let (client_key, server_key) = gen_keys();
-        let ct = U32Ct::encrypt(3472387250, &client_key);
-        let r = ct.bitxor_scalar(964349245, &server_key);
+        let ct1 = U32Ct::encrypt(3472387250, &client_key);
+        let ct2 = U32Ct::encrypt(964349245, &client_key);
+        let r = ct1.bitxor(&ct2, &server_key);
         let pt = r.decrypt(&client_key);
         assert_eq!(pt, 3472387250 ^ 964349245);
     }
@@ -149,8 +135,9 @@ mod tests {
     #[test]
     fn test_bitand() {
         let (client_key, server_key) = gen_keys();
-        let ct = U32Ct::encrypt(3472387250, &client_key);
-        let r = ct.bitand_scalar(964349245, &server_key);
+        let ct1 = U32Ct::encrypt(3472387250, &client_key);
+        let ct2 = U32Ct::encrypt(964349245, &client_key);
+        let r = ct1.bitand(&ct2, &server_key);
         let pt = r.decrypt(&client_key);
         assert_eq!(pt, 3472387250 & 964349245);
     }
@@ -209,12 +196,14 @@ mod tests {
     fn test_add() {
         let (client_key, server_key) = gen_keys();
         let ct1 = U32Ct::encrypt(33, &client_key);
-        let r = ct1.add_scalar(36, &server_key);
+        let ct2 = U32Ct::encrypt(36, &client_key);
+        let r = ct1.add(&ct2, &server_key);
         let pt = r.decrypt(&client_key);
         assert_eq!(pt, 33u32.wrapping_add(36));
-        let ct1 = U32Ct::encrypt(3472387250, &client_key);
-        let r = ct1.add_scalar(964349245, &server_key);
+        let ct1 = U32Ct::encrypt(4294967295, &client_key);
+        let ct2 = U32Ct::encrypt(2, &client_key);
+        let r = ct1.add(&ct2, &server_key);
         let pt = r.decrypt(&client_key);
-        assert_eq!(pt, 3472387250u32.wrapping_add(964349245));
+        assert_eq!(pt, 1);
     }
 }

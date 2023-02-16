@@ -63,6 +63,8 @@ pub fn maj(x: &U32Ct, y: &U32Ct, z: &U32Ct, server_key: &ServerKey) -> U32Ct {
 
 #[cfg(test)]
 mod tests {
+    use tfhe::boolean::gen_keys;
+
     use super::*;
 
     #[test]
@@ -95,5 +97,56 @@ mod tests {
             0, 3, 128,
         ];
         assert_eq!(padded, expected);
+    }
+
+    type Scramble1 = fn(&U32Ct, &ServerKey) -> U32Ct;
+    type Scramble3 = fn(&U32Ct, &U32Ct, &U32Ct, &ServerKey) -> U32Ct;
+
+    fn test_scamble1(scramble: Scramble1, x: u32, y_expected: u32) {
+        let (client_key, server_key) = gen_keys();
+        let x = U32Ct::encrypt(x, &client_key);
+        let y_ct = scramble(&x, &server_key);
+        let y = y_ct.decrypt(&client_key);
+        assert_eq!(y, y_expected);
+    }
+
+    fn test_scramble3(scramble: Scramble3, a: u32, b: u32, c: u32, y_expected: u32) {
+        let (client_key, server_key) = gen_keys();
+        let a = U32Ct::encrypt(a, &client_key);
+        let b = U32Ct::encrypt(b, &client_key);
+        let c = U32Ct::encrypt(c, &client_key);
+        let y_ct = scramble(&a, &b, &c, &server_key);
+        let y = y_ct.decrypt(&client_key);
+        assert_eq!(y, y_expected);
+    }
+
+    #[test]
+    fn test_sigma0() {
+        test_scamble1(sigma0, 0b1111111111111111, 0b11000001111111111101111000000000);
+    }
+
+    #[test]
+    fn test_sigma1() {
+        test_scamble1(sigma1, 0b1111111111111111, 0b01100000000000000110000000111111);
+    }
+
+    #[test]
+    fn test_capsigma0() {
+        test_scamble1(capsigma0, 0b1111111111111111, 0b00111100000001111100001111111000);
+    }
+
+    #[test]
+    fn test_capsigma1() {
+        test_scamble1(capsigma1, 0b1111111111111111, 0b00000011100111111111110001100000);
+    }
+
+    #[test]
+    fn test_ch() {
+        test_scramble3(ch, 0xaaaa, 0xbbbb, 0xcccc, 61166);
+    }
+
+    #[test]
+    fn test_maj() {
+        test_scramble3(maj, 0xaaaa, 0xbbbb, 0xcccc, 43690);
     }
 }
