@@ -13,18 +13,20 @@ use constants::*;
 use u32ct::*;
 use util::*;
 
+/// A padded input to the SHA256 hash function as a ciphertext
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct PreimageCt {
+pub struct InputCiphertext {
     inner: Vec<U32Ct>,
 }
 
+/// A SHA256 digest as a ciphertext
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct HashCt {
+pub struct DigestCiphertext {
     inner: [U32Ct; 8],
 }
 
 #[inline]
-fn encrypt_preimage_helper(message: Vec<u8>, enc: impl Fn(u32) -> U32Ct) -> PreimageCt {
+fn encrypt_input_helper(message: Vec<u8>, enc: impl Fn(u32) -> U32Ct) -> InputCiphertext {
     // padding
     let message = pad_message(message);
     // encrypt using the client key
@@ -34,15 +36,19 @@ fn encrypt_preimage_helper(message: Vec<u8>, enc: impl Fn(u32) -> U32Ct) -> Prei
         .map(u32::from_be_bytes)
         .map(enc)
         .collect::<Vec<_>>();
-    PreimageCt { inner }
+    InputCiphertext { inner }
 }
 
-pub fn encrypt_preimage(message: Vec<u8>, client_key: &ClientKey) -> PreimageCt {
-    encrypt_preimage_helper(message, |x| U32Ct::encrypt(x, client_key))
+/// Pad and encrypt an input message to be hashed
+pub fn encrypt_input(message: Vec<u8>, client_key: &ClientKey) -> InputCiphertext {
+    encrypt_input_helper(message, |x| U32Ct::encrypt(x, client_key))
 }
 
-pub fn trivial_encrypt_preimage(message: Vec<u8>, server_key: &ServerKey) -> PreimageCt {
-    encrypt_preimage_helper(message, |x| U32Ct::trivial_encrypt(x, server_key))
+/// Pad and trivially encrypt an input message to be hashed. This does not
+/// obfuscate the input. Passing the resulting [`InputCiphertext`] into
+/// [`sha256_tfhe`] is simply SHA256 evaluation the clear
+pub fn trivial_encrypt_input(message: Vec<u8>, server_key: &ServerKey) -> InputCiphertext {
+    encrypt_input_helper(message, |x| U32Ct::trivial_encrypt(x, server_key))
 }
 
 #[inline]
@@ -57,13 +63,14 @@ fn round(alphabet: &mut [U32Ct; 8], kp: &U32Ct, server_key: &ServerKey) {
     *h = t1.add(&t2, server_key);
 }
 
-pub fn sha256_tfhe(preimage_ct: &PreimageCt, server_key: &ServerKey) -> HashCt {
-    let preimage_ct = &preimage_ct.inner;
-    let message_length = preimage_ct.len();
+/// Perform SHA256 of an [`InputCiphertext`] fully homomorphically
+pub fn sha256_tfhe(input_ct: &InputCiphertext, server_key: &ServerKey) -> DigestCiphertext {
+    let input_ct = &input_ct.inner;
+    let message_length = input_ct.len();
     let blocks = message_length / 16;
     assert_eq!(message_length % 16, 0);
 
-    let mut preimage_ct = preimage_ct.iter();
+    let mut input_ct = input_ct.iter();
     let mut s = H.map(|hi| U32Ct::trivial_encrypt(hi, server_key));
     let k = K.map(|ki| U32Ct::trivial_encrypt(ki, server_key));
 
@@ -71,7 +78,7 @@ pub fn sha256_tfhe(preimage_ct: &PreimageCt, server_key: &ServerKey) -> HashCt {
         let mut alphabet = s.clone();
 
         let mut w = array::from_fn::<_, 16, _>(|i| {
-            let wi = preimage_ct.next().unwrap();
+            let wi = input_ct.next().unwrap();
 
             let k_w = k[i].add(&wi, server_key);
             round(&mut alphabet, &k_w, server_key);
@@ -101,11 +108,12 @@ pub fn sha256_tfhe(preimage_ct: &PreimageCt, server_key: &ServerKey) -> HashCt {
         }
     }
 
-    HashCt { inner: s }
+    DigestCiphertext { inner: s }
 }
 
-pub fn decrypt_hash(hash_ct: &HashCt, client_key: &ClientKey) -> [u8; 32] {
-    hash_ct
+/// Decrypt a [`DigestCiphertext`] with the same `ClientKey` that encrypted its [`InputCiphertext`]
+pub fn decrypt_hash(digest_ct: &DigestCiphertext, client_key: &ClientKey) -> [u8; 32] {
+    digest_ct
         .inner
         .iter()
         .map(|ct| ct.decrypt(client_key))
@@ -125,33 +133,33 @@ mod tests {
     #[test]
     fn test_empty_input_trivial() {
         let (client_key, server_key) = gen_keys();
-        let preimage = b"".to_vec();
-        let preimage_ct = trivial_encrypt_preimage(preimage.clone(), &server_key);
-        let hash_ct = sha256_tfhe(&preimage_ct, &server_key);
+        let input = b"".to_vec();
+        let input_ct = trivial_encrypt_input(input.clone(), &server_key);
+        let hash_ct = sha256_tfhe(&input_ct, &server_key);
         let hash = decrypt_hash(&hash_ct, &client_key);
-        let expected_hash = Sha256::digest(preimage);
+        let expected_hash = Sha256::digest(input);
         assert_eq!(&hash, expected_hash.as_slice());
     }
 
     #[test]
     fn test_small_input_trivial() {
         let (client_key, server_key) = gen_keys();
-        let preimage = b"hello world".to_vec();
-        let preimage_ct = trivial_encrypt_preimage(preimage.clone(), &server_key);
-        let hash_ct = sha256_tfhe(&preimage_ct, &server_key);
+        let input = b"hello world".to_vec();
+        let input_ct = trivial_encrypt_input(input.clone(), &server_key);
+        let hash_ct = sha256_tfhe(&input_ct, &server_key);
         let hash = decrypt_hash(&hash_ct, &client_key);
-        let expected_hash = Sha256::digest(preimage);
+        let expected_hash = Sha256::digest(input);
         assert_eq!(&hash, expected_hash.as_slice());
     }
 
     #[test]
     fn test_larger_input_trivial() {
         let (client_key, server_key) = gen_keys();
-        let preimage = b"abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu".to_vec();
-        let preimage_ct = trivial_encrypt_preimage(preimage.clone(), &server_key);
-        let hash_ct = sha256_tfhe(&preimage_ct, &server_key);
+        let input = b"abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu".to_vec();
+        let input_ct = trivial_encrypt_input(input.clone(), &server_key);
+        let hash_ct = sha256_tfhe(&input_ct, &server_key);
         let hash = decrypt_hash(&hash_ct, &client_key);
-        let expected_hash = Sha256::digest(preimage);
+        let expected_hash = Sha256::digest(input);
         assert_eq!(&hash, expected_hash.as_slice());
     }
 
@@ -159,11 +167,11 @@ mod tests {
     #[ignore]
     fn test_empty_input() {
         let (client_key, server_key) = gen_keys();
-        let preimage = b"".to_vec();
-        let preimage_ct = encrypt_preimage(preimage.clone(), &client_key);
-        let hash_ct = sha256_tfhe(&preimage_ct, &server_key);
+        let input = b"".to_vec();
+        let input_ct = encrypt_input(input.clone(), &client_key);
+        let hash_ct = sha256_tfhe(&input_ct, &server_key);
         let hash = decrypt_hash(&hash_ct, &client_key);
-        let expected_hash = Sha256::digest(preimage);
+        let expected_hash = Sha256::digest(input);
         assert_eq!(&hash, expected_hash.as_slice());
     }
 
@@ -171,11 +179,11 @@ mod tests {
     #[ignore]
     fn test_small_input() {
         let (client_key, server_key) = gen_keys();
-        let preimage = b"hello world".to_vec();
-        let preimage_ct = encrypt_preimage(preimage.clone(), &client_key);
-        let hash_ct = sha256_tfhe(&preimage_ct, &server_key);
+        let input = b"hello world".to_vec();
+        let input_ct = encrypt_input(input.clone(), &client_key);
+        let hash_ct = sha256_tfhe(&input_ct, &server_key);
         let hash = decrypt_hash(&hash_ct, &client_key);
-        let expected_hash = Sha256::digest(preimage);
+        let expected_hash = Sha256::digest(input);
         assert_eq!(&hash, expected_hash.as_slice());
     }
 
@@ -183,11 +191,11 @@ mod tests {
     #[ignore]
     fn test_larger_input() {
         let (client_key, server_key) = gen_keys();
-        let preimage = b"abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu".to_vec();
-        let preimage_ct = encrypt_preimage(preimage.clone(), &client_key);
-        let hash_ct = sha256_tfhe(&preimage_ct, &server_key);
+        let input = b"abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu".to_vec();
+        let input_ct = encrypt_input(input.clone(), &client_key);
+        let hash_ct = sha256_tfhe(&input_ct, &server_key);
         let hash = decrypt_hash(&hash_ct, &client_key);
-        let expected_hash = Sha256::digest(preimage);
+        let expected_hash = Sha256::digest(input);
         assert_eq!(&hash, expected_hash.as_slice());
     }
 }
