@@ -1,4 +1,4 @@
-#![feature(array_methods, array_zip, iter_array_chunks)]
+#![feature(array_methods, array_zip, get_many_mut, iter_array_chunks)]
 
 mod constants;
 mod u32ct;
@@ -36,100 +36,80 @@ pub fn encrypt_preimage(message: Vec<u8>, client_key: &ClientKey) -> PreimageCt 
     PreimageCt { inner }
 }
 
+pub fn trivial_encrypt_preimage(message: Vec<u8>, server_key: &ServerKey) -> PreimageCt {
+    // padding
+    let message = pad_message(message);
+    // encrypt using the client key
+    let inner = message
+        .into_iter()
+        .array_chunks::<4>()
+        .map(u32::from_be_bytes)
+        .map(|x| U32Ct::trivial_encrypt(x, server_key))
+        .collect::<Vec<_>>();
+    PreimageCt { inner }
+}
+
+#[inline]
+fn round(alphabet: &mut [U32Ct; 8], k: &U32Ct, server_key: &ServerKey) {
+    let [a, b, c, d, e, f, g, h] = alphabet.get_many_mut([0, 1, 2, 3, 4, 5, 6, 7]).unwrap();
+    let t1 = h
+        .add(&capsigma1(e, server_key), server_key)
+        .add(&ch(e, f, g, server_key), server_key)
+        .add(k, server_key);
+    let t2 = capsigma0(a, server_key).add(&maj(a, b, c, server_key), server_key);
+    *d = d.add(&t1, server_key);
+    *h = t1.add(&t2, server_key);
+}
+
 pub fn sha256_tfhe(preimage_ct: &PreimageCt, server_key: &ServerKey) -> HashCt {
     let preimage_ct = &preimage_ct.inner;
     let message_length = preimage_ct.len();
     assert_eq!(message_length % 16, 0);
     let blocks = message_length / 16;
 
-    let mut preimage_index = 0;
+    let mut preimage_ct = preimage_ct.iter();
 
-    let mut h0 = U32Ct::trivial_encrypt(H[0], server_key);
-    let mut h1 = U32Ct::trivial_encrypt(H[1], server_key);
-    let mut h2 = U32Ct::trivial_encrypt(H[2], server_key);
-    let mut h3 = U32Ct::trivial_encrypt(H[3], server_key);
-    let mut h4 = U32Ct::trivial_encrypt(H[4], server_key);
-    let mut h5 = U32Ct::trivial_encrypt(H[5], server_key);
-    let mut h6 = U32Ct::trivial_encrypt(H[6], server_key);
-    let mut h7 = U32Ct::trivial_encrypt(H[7], server_key);
+    let mut s = H.map(|hi| U32Ct::trivial_encrypt(hi, server_key));
+    let k = K.map(|ki| U32Ct::trivial_encrypt(ki, server_key));
 
-    for asdf in 0..blocks {
-        println!("asdf: {asdf}");
+    for _ in 0..blocks {
+        let mut alphabet = s.clone();
 
-        let mut a = h0.clone();
-        let mut b = h1.clone();
-        let mut c = h2.clone();
-        let mut d = h3.clone();
-        let mut e = h4.clone();
-        let mut f = h5.clone();
-        let mut g = h6.clone();
-        let mut h = h7.clone();
+        let mut w = array::from_fn::<_, 16, _>(|i| {
+            let wi = preimage_ct.next().unwrap();
 
-        let mut x = array::from_fn::<_, 16, _>(|i| {
-            println!("i: {i}");
-            let xi = &preimage_ct[preimage_index];
-            preimage_index += 1;
+            let k = k[i].add(&wi, server_key);
+            round(&mut alphabet, &k, server_key);
 
-            let mut t1 = h.clone();
-            t1 = t1.add(&capsigma1(&e, server_key), server_key);
-            t1 = t1.add(&ch(&e, &f, &g, server_key), server_key);
-            t1 = t1.add(&U32Ct::trivial_encrypt(K[i], server_key), server_key);
-            t1 = t1.add(xi, server_key);
+            alphabet.rotate_right(1);
 
-            let mut t2 = capsigma0(&a, server_key);
-            t2 = t2.add(&maj(&a, &b, &c, server_key), server_key);
-
-            h = g.clone();
-            g = f.clone();
-            f = e.clone();
-            e = d.add(&t1, server_key);
-            d = c.clone();
-            c = b.clone();
-            b = a.clone();
-            a = t1.add(&t2, server_key);
-
-            xi.clone()
+            wi.clone()
         });
 
-        for i in 0..64 {
-            println!("i: {i}");
-            let mut s0 = x[(i + 1) & 0x0f].clone();
-            s0 = sigma0(&s0, server_key);
-            let mut s1 = x[(i + 14) & 0x0f].clone();
-            s1 = sigma1(&s1, server_key);
+        for i in 16..64 {
+            let [wo0, wo1, wo9, wo14] =
+                w.get_many_mut([i % 16, (i + 1) % 16, (i + 9) % 16, (i + 14) % 16]).unwrap();
 
-            x[i & 0xf] = x[i & 0xf]
+            let s0 = sigma0(wo1, server_key);
+            let s1 = sigma1(wo14, server_key);
+
+            *wo0 = wo0
                 .add(&s0, server_key)
                 .add(&s1, server_key)
-                .add(&x[(i + 9) & 0xf], server_key);
-            let t1 = x[i & 0xf]
-                .add(&h, server_key)
-                .add(&capsigma1(&e, server_key), server_key)
-                .add(&ch(&e, &f, &g, server_key), server_key)
-                .add(&U32Ct::trivial_encrypt(K[i], server_key), server_key);
-            let t2 = capsigma0(&a, server_key).add(&maj(&a, &b, &c, server_key), server_key);
+                .add(wo9, server_key)
+                .add(&k[i], server_key);
 
-            h = g.clone();
-            g = f.clone();
-            f = e.clone();
-            e = d.add(&t1, server_key);
-            d = c;
-            c = b;
-            b = a;
-            a = t1.add(&t2, server_key);
+            round(&mut alphabet, wo0, server_key);
+
+            alphabet.rotate_right(1);
         }
 
-        h0 = h0.add(&a, server_key);
-        h1 = h1.add(&b, server_key);
-        h2 = h2.add(&c, server_key);
-        h3 = h3.add(&d, server_key);
-        h4 = h4.add(&e, server_key);
-        h5 = h5.add(&f, server_key);
-        h6 = h6.add(&g, server_key);
-        h7 = h7.add(&h, server_key);
+        for (s_i, alphabet_i) in s.iter_mut().zip(alphabet) {
+            *s_i = s_i.add(&alphabet_i, server_key);
+        }
     }
 
-    HashCt { inner: [h0, h1, h2, h3, h4, h5, h6, h7] }
+    HashCt { inner: s }
 }
 
 pub fn decrypt_hash(hash_ct: &HashCt, client_key: &ClientKey) -> [u8; 32] {
@@ -137,8 +117,7 @@ pub fn decrypt_hash(hash_ct: &HashCt, client_key: &ClientKey) -> [u8; 32] {
         .inner
         .iter()
         .map(|ct| ct.decrypt(client_key))
-        .map(u32::to_be_bytes)
-        .flatten()
+        .flat_map(u32::to_be_bytes)
         .collect::<Vec<_>>()
         .try_into()
         .expect("to flatten into [u8; 32]")
@@ -152,6 +131,40 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_empty_input_trivial() {
+        let (client_key, server_key) = gen_keys();
+        let preimage = b"".to_vec();
+        let preimage_ct = trivial_encrypt_preimage(preimage.clone(), &server_key);
+        let hash_ct = sha256_tfhe(&preimage_ct, &server_key);
+        let hash = decrypt_hash(&hash_ct, &client_key);
+        let expected_hash = Sha256::digest(preimage);
+        assert_eq!(&hash, expected_hash.as_slice());
+    }
+
+    #[test]
+    fn test_small_input_trivial() {
+        let (client_key, server_key) = gen_keys();
+        let preimage = b"hello world".to_vec();
+        let preimage_ct = trivial_encrypt_preimage(preimage.clone(), &server_key);
+        let hash_ct = sha256_tfhe(&preimage_ct, &server_key);
+        let hash = decrypt_hash(&hash_ct, &client_key);
+        let expected_hash = Sha256::digest(preimage);
+        assert_eq!(&hash, expected_hash.as_slice());
+    }
+
+    #[test]
+    fn test_larger_input_trivial() {
+        let (client_key, server_key) = gen_keys();
+        let preimage = b"abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu".to_vec();
+        let preimage_ct = trivial_encrypt_preimage(preimage.clone(), &server_key);
+        let hash_ct = sha256_tfhe(&preimage_ct, &server_key);
+        let hash = decrypt_hash(&hash_ct, &client_key);
+        let expected_hash = Sha256::digest(preimage);
+        assert_eq!(&hash, expected_hash.as_slice());
+    }
+
+    #[test]
+    #[ignore]
     fn test_empty_input() {
         let (client_key, server_key) = gen_keys();
         let preimage = b"".to_vec();
@@ -163,6 +176,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_small_input() {
         let (client_key, server_key) = gen_keys();
         let preimage = b"hello world".to_vec();
@@ -174,6 +188,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_larger_input() {
         let (client_key, server_key) = gen_keys();
         let preimage = b"abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu".to_vec();
