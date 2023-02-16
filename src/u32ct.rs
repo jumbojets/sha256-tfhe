@@ -7,7 +7,7 @@ use tfhe::boolean::{
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct U32Ct {
-    inner: [Ciphertext; 32], // least significant bit
+    inner: [Ciphertext; 32], // little endian
 }
 
 impl U32Ct {

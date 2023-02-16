@@ -23,7 +23,8 @@ pub struct HashCt {
     inner: [U32Ct; 8],
 }
 
-pub fn encrypt_preimage(message: Vec<u8>, client_key: &ClientKey) -> PreimageCt {
+#[inline]
+fn encrypt_preimage_helper(message: Vec<u8>, enc: impl Fn(u32) -> U32Ct) -> PreimageCt {
     // padding
     let message = pad_message(message);
     // encrypt using the client key
@@ -31,31 +32,26 @@ pub fn encrypt_preimage(message: Vec<u8>, client_key: &ClientKey) -> PreimageCt 
         .into_iter()
         .array_chunks::<4>()
         .map(u32::from_be_bytes)
-        .map(|x| U32Ct::encrypt(x, client_key))
+        .map(enc)
         .collect::<Vec<_>>();
     PreimageCt { inner }
+}
+
+pub fn encrypt_preimage(message: Vec<u8>, client_key: &ClientKey) -> PreimageCt {
+    encrypt_preimage_helper(message, |x| U32Ct::encrypt(x, client_key))
 }
 
 pub fn trivial_encrypt_preimage(message: Vec<u8>, server_key: &ServerKey) -> PreimageCt {
-    // padding
-    let message = pad_message(message);
-    // encrypt using the client key
-    let inner = message
-        .into_iter()
-        .array_chunks::<4>()
-        .map(u32::from_be_bytes)
-        .map(|x| U32Ct::trivial_encrypt(x, server_key))
-        .collect::<Vec<_>>();
-    PreimageCt { inner }
+    encrypt_preimage_helper(message, |x| U32Ct::trivial_encrypt(x, server_key))
 }
 
 #[inline]
-fn round(alphabet: &mut [U32Ct; 8], k: &U32Ct, server_key: &ServerKey) {
+fn round(alphabet: &mut [U32Ct; 8], kp: &U32Ct, server_key: &ServerKey) {
     let [a, b, c, d, e, f, g, h] = alphabet.get_many_mut([0, 1, 2, 3, 4, 5, 6, 7]).unwrap();
     let t1 = h
         .add(&capsigma1(e, server_key), server_key)
         .add(&ch(e, f, g, server_key), server_key)
-        .add(k, server_key);
+        .add(kp, server_key);
     let t2 = capsigma0(a, server_key).add(&maj(a, b, c, server_key), server_key);
     *d = d.add(&t1, server_key);
     *h = t1.add(&t2, server_key);
@@ -64,11 +60,10 @@ fn round(alphabet: &mut [U32Ct; 8], k: &U32Ct, server_key: &ServerKey) {
 pub fn sha256_tfhe(preimage_ct: &PreimageCt, server_key: &ServerKey) -> HashCt {
     let preimage_ct = &preimage_ct.inner;
     let message_length = preimage_ct.len();
-    assert_eq!(message_length % 16, 0);
     let blocks = message_length / 16;
+    assert_eq!(message_length % 16, 0);
 
     let mut preimage_ct = preimage_ct.iter();
-
     let mut s = H.map(|hi| U32Ct::trivial_encrypt(hi, server_key));
     let k = K.map(|ki| U32Ct::trivial_encrypt(ki, server_key));
 
@@ -78,8 +73,8 @@ pub fn sha256_tfhe(preimage_ct: &PreimageCt, server_key: &ServerKey) -> HashCt {
         let mut w = array::from_fn::<_, 16, _>(|i| {
             let wi = preimage_ct.next().unwrap();
 
-            let k = k[i].add(&wi, server_key);
-            round(&mut alphabet, &k, server_key);
+            let k_w = k[i].add(&wi, server_key);
+            round(&mut alphabet, &k_w, server_key);
 
             alphabet.rotate_right(1);
 
@@ -93,13 +88,10 @@ pub fn sha256_tfhe(preimage_ct: &PreimageCt, server_key: &ServerKey) -> HashCt {
             let s0 = sigma0(wo1, server_key);
             let s1 = sigma1(wo14, server_key);
 
-            *wo0 = wo0
-                .add(&s0, server_key)
-                .add(&s1, server_key)
-                .add(wo9, server_key)
-                .add(&k[i], server_key);
+            *wo0 = wo0.add(&s0, server_key).add(&s1, server_key).add(wo9, server_key);
 
-            round(&mut alphabet, wo0, server_key);
+            let k_wo0 = wo0.add(&k[i], server_key);
+            round(&mut alphabet, &k_wo0, server_key);
 
             alphabet.rotate_right(1);
         }

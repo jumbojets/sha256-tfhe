@@ -8,7 +8,7 @@ pub fn pad_message(mut msg: Vec<u8>) -> Vec<u8> {
     while (msg.len() * 8 + 64) % 512 != 0 {
         msg.push(0x00);
     }
-    let len_be_bytes = length.to_be_bytes().map(u8::to_be);
+    let len_be_bytes = length.to_be_bytes();
     msg.extend(&len_be_bytes);
     assert_eq!((msg.len() * 8) % 512, 0);
     msg
