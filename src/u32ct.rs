@@ -1,13 +1,15 @@
+use std::array;
+
 use serde::{Deserialize, Serialize};
 use tfhe::boolean::{
-    ciphertext::Ciphertext,
+    ciphertext::Ciphertext as BoolCt,
     client_key::ClientKey,
     server_key::{BinaryBooleanGates, ServerKey},
 };
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct U32Ct {
-    inner: [Ciphertext; 32], // little endian
+    inner: [BoolCt; 32], // little endian
 }
 
 impl U32Ct {
@@ -67,29 +69,15 @@ impl U32Ct {
     }
 }
 
-fn bits(mut x: u32) -> [bool; 32] {
-    [false; 32].map(|_| {
-        let bit = (x & 1) == 1;
-        x >>= 1;
-        bit
-    })
+fn bits(x: u32) -> [bool; 32] {
+    array::from_fn(|i| (x >> i) & 1 == 1)
 }
 
 fn from_bits(bits: [bool; 32]) -> u32 {
-    let mut r = 0;
-    for b in bits.into_iter().rev() {
-        r <<= 1;
-        r += b as u32;
-    }
-    r
+    bits.into_iter().rev().fold(0, |acc, b| (acc << 1) + b as u32)
 }
 
-fn full_adder(
-    a: &Ciphertext,
-    b: &Ciphertext,
-    c_in: &Ciphertext,
-    server_key: &ServerKey,
-) -> (Ciphertext, Ciphertext) {
+fn full_adder(a: &BoolCt, b: &BoolCt, c_in: &BoolCt, server_key: &ServerKey) -> (BoolCt, BoolCt) {
     let a_xor_b = server_key.xor(a, b);
     let s = server_key.xor(&a_xor_b, c_in);
     let axb_and_c_in = server_key.and(&a_xor_b, c_in);

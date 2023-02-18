@@ -25,7 +25,6 @@ pub struct DigestCiphertext {
     inner: [U32Ct; 8],
 }
 
-#[inline]
 fn encrypt_input_helper(message: Vec<u8>, enc: impl Fn(u32) -> U32Ct) -> InputCiphertext {
     // padding
     let message = pad_message(message);
@@ -51,7 +50,6 @@ pub fn trivial_encrypt_input(message: Vec<u8>, server_key: &ServerKey) -> InputC
     encrypt_input_helper(message, |x| U32Ct::trivial_encrypt(x, server_key))
 }
 
-#[inline]
 fn round(alphabet: &mut [U32Ct; 8], kp: &U32Ct, server_key: &ServerKey) {
     let [a, b, c, d, e, f, g, h] = alphabet.get_many_mut([0, 1, 2, 3, 4, 5, 6, 7]).unwrap();
     let t1 = h
@@ -78,14 +76,14 @@ pub fn sha256_tfhe(input_ct: &InputCiphertext, server_key: &ServerKey) -> Digest
         let mut alphabet = s.clone();
 
         let mut w = array::from_fn::<_, 16, _>(|i| {
-            let wi = input_ct.next().unwrap();
+            let wi = input_ct.next().unwrap().clone();
 
-            let k_w = k[i].add(wi, server_key);
+            let k_w = k[i].add(&wi, server_key);
             round(&mut alphabet, &k_w, server_key);
 
             alphabet.rotate_right(1);
 
-            wi.clone()
+            wi
         });
 
         #[allow(clippy::needless_range_loop)]
@@ -112,7 +110,8 @@ pub fn sha256_tfhe(input_ct: &InputCiphertext, server_key: &ServerKey) -> Digest
     DigestCiphertext { inner: s }
 }
 
-/// Decrypt a [`DigestCiphertext`] with the same `ClientKey` that encrypted its [`InputCiphertext`]
+/// Decrypt a [`DigestCiphertext`] with the same `ClientKey` that encrypted its
+/// [`InputCiphertext`]
 pub fn decrypt_hash(digest_ct: &DigestCiphertext, client_key: &ClientKey) -> [u8; 32] {
     digest_ct
         .inner
