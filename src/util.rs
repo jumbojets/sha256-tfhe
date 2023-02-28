@@ -47,18 +47,16 @@ pub fn capsigma1(x: &U32Ct, server_key: &ServerKey) -> U32Ct {
 }
 
 pub fn ch(x: &U32Ct, y: &U32Ct, z: &U32Ct, server_key: &ServerKey) -> U32Ct {
-    let left = x.bitand(y, server_key);
-    let not_x = x.bitnot(server_key);
-    let right = not_x.bitand(z, server_key);
-    left.bitxor(&right, server_key)
+    let y_xor_z = y.bitxor(&z, server_key);
+    let x_and_yxorz = x.bitand(&y_xor_z, server_key);
+    z.bitxor(&x_and_yxorz, server_key)
 }
 
 pub fn maj(x: &U32Ct, y: &U32Ct, z: &U32Ct, server_key: &ServerKey) -> U32Ct {
+    let x_or_y = x.bitor(&y, server_key);
+    let right = z.bitand(&x_or_y, server_key);
     let left = x.bitand(y, server_key);
-    let middle = x.bitand(z, server_key);
-    let right = y.bitand(z, server_key);
-    let fold_l = left.bitxor(&middle, server_key);
-    fold_l.bitxor(&right, server_key)
+    left.bitor(&right, server_key)
 }
 
 #[cfg(test)]

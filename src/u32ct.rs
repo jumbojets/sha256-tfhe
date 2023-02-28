@@ -47,8 +47,10 @@ impl U32Ct {
         Self { inner }
     }
 
-    pub fn bitnot(&self, server_key: &ServerKey) -> Self {
-        Self { inner: self.inner.each_ref().map(|b| server_key.not(b)) }
+    pub fn bitor(&self, other: &Self, server_key: &ServerKey) -> Self {
+        let inner =
+            self.inner.each_ref().zip(other.inner.each_ref()).map(|(l, r)| server_key.or(l, r));
+        Self { inner }
     }
 
     pub fn rotate_right(&self, shift: usize) -> Self {
@@ -131,12 +133,13 @@ mod tests {
     }
 
     #[test]
-    fn test_bitnot() {
+    fn test_bitor() {
         let (client_key, server_key) = gen_keys();
-        let ct = U32Ct::encrypt(3472387250, &client_key);
-        let r = ct.bitnot(&server_key);
+        let ct1 = U32Ct::encrypt(3472387250, &client_key);
+        let ct2 = U32Ct::encrypt(964349245, &client_key);
+        let r = ct1.bitor(&ct2, &server_key);
         let pt = r.decrypt(&client_key);
-        assert_eq!(pt, !3472387250);
+        assert_eq!(pt, 3472387250 | 964349245);
     }
 
     #[test]
