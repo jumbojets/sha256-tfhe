@@ -96,20 +96,16 @@ mod tests {
 
     #[test]
     fn test_bits() {
-        let bits = bits(0x234928fc);
-        let n = from_bits(bits);
-        assert_eq!(n, 0x234928fc);
+        assert_eq!(from_bits(bits(0x234928fc)), 0x234928fc);
     }
 
     #[test]
     fn test_encrypt_decrypt() {
         let (key, _) = gen_keys();
-        let ct = U32Ct::encrypt(0, &key);
-        let pt = ct.decrypt(&key);
-        assert_eq!(pt, 0);
-        let ct = U32Ct::encrypt(234353, &key);
-        let pt = ct.decrypt(&key);
-        assert_eq!(pt, 234353);
+        let r = U32Ct::encrypt(0, &key).decrypt(&key);
+        assert_eq!(r, 0);
+        let r = U32Ct::encrypt(234353, &key).decrypt(&key);
+        assert_eq!(r, 234353);
     }
 
     #[test]
@@ -117,9 +113,8 @@ mod tests {
         let (client_key, server_key) = gen_keys();
         let ct1 = U32Ct::encrypt(3472387250, &client_key);
         let ct2 = U32Ct::encrypt(964349245, &client_key);
-        let r = ct1.bitxor(&ct2, &server_key);
-        let pt = r.decrypt(&client_key);
-        assert_eq!(pt, 3472387250 ^ 964349245);
+        let r = ct1.bitxor(&ct2, &server_key).decrypt(&client_key);
+        assert_eq!(r, 3472387250 ^ 964349245);
     }
 
     #[test]
@@ -127,9 +122,8 @@ mod tests {
         let (client_key, server_key) = gen_keys();
         let ct1 = U32Ct::encrypt(3472387250, &client_key);
         let ct2 = U32Ct::encrypt(964349245, &client_key);
-        let r = ct1.bitand(&ct2, &server_key);
-        let pt = r.decrypt(&client_key);
-        assert_eq!(pt, 3472387250 & 964349245);
+        let r = ct1.bitand(&ct2, &server_key).decrypt(&client_key);
+        assert_eq!(r, 3472387250 & 964349245);
     }
 
     #[test]
@@ -137,27 +131,24 @@ mod tests {
         let (client_key, server_key) = gen_keys();
         let ct1 = U32Ct::encrypt(3472387250, &client_key);
         let ct2 = U32Ct::encrypt(964349245, &client_key);
-        let r = ct1.bitor(&ct2, &server_key);
-        let pt = r.decrypt(&client_key);
-        assert_eq!(pt, 3472387250 | 964349245);
+        let r = ct1.bitor(&ct2, &server_key).decrypt(&client_key);
+        assert_eq!(r, 3472387250 | 964349245);
     }
 
     #[test]
     fn test_rotate_right() {
         let (key, _) = gen_keys();
-        let ct = U32Ct::encrypt(3472387250, &key);
-        let r = ct.rotate_right(12);
-        let pt = r.decrypt(&key);
-        assert_eq!(pt, 3472387250u32.rotate_right(12));
+        let r = U32Ct::encrypt(3472387250, &key).rotate_right(12).decrypt(&key);
+        assert_eq!(r, 3472387250u32.rotate_right(12));
     }
 
     #[test]
     fn test_shift_right() {
         let (client_key, server_key) = gen_keys();
-        let ct = U32Ct::encrypt(3472387250, &client_key);
-        let r = ct.shift_right(12, &server_key);
-        let pt = r.decrypt(&client_key);
-        assert_eq!(pt, 3472387250u32 >> 12);
+        let r = U32Ct::encrypt(3472387250, &client_key)
+            .shift_right(12, &server_key)
+            .decrypt(&client_key);
+        assert_eq!(r, 3472387250u32 >> 12);
     }
 
     #[test]
@@ -188,13 +179,11 @@ mod tests {
         let (client_key, server_key) = gen_keys();
         let ct1 = U32Ct::encrypt(33, &client_key);
         let ct2 = U32Ct::encrypt(36, &client_key);
-        let r = ct1.add(&ct2, &server_key);
-        let pt = r.decrypt(&client_key);
+        let pt = ct1.add(&ct2, &server_key).decrypt(&client_key);
         assert_eq!(pt, 33u32.wrapping_add(36));
         let ct1 = U32Ct::encrypt(4294967295, &client_key);
         let ct2 = U32Ct::encrypt(2, &client_key);
-        let r = ct1.add(&ct2, &server_key);
-        let pt = r.decrypt(&client_key);
-        assert_eq!(pt, 1);
+        let r = ct1.add(&ct2, &server_key).decrypt(&client_key);
+        assert_eq!(r, 1);
     }
 }

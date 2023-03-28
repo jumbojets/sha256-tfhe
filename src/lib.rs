@@ -112,7 +112,7 @@ pub fn sha256_tfhe(input_ct: &InputCiphertext, server_key: &ServerKey) -> Digest
 
 /// Decrypt a [`DigestCiphertext`] with the same `ClientKey` that encrypted its
 /// [`InputCiphertext`]
-pub fn decrypt_hash(digest_ct: &DigestCiphertext, client_key: &ClientKey) -> [u8; 32] {
+pub fn decrypt_digest(digest_ct: &DigestCiphertext, client_key: &ClientKey) -> [u8; 32] {
     digest_ct
         .inner
         .iter()
@@ -136,7 +136,7 @@ mod tests {
         let input = b"".to_vec();
         let input_ct = trivial_encrypt_input(input.clone(), &server_key);
         let hash_ct = sha256_tfhe(&input_ct, &server_key);
-        let hash = decrypt_hash(&hash_ct, &client_key);
+        let hash = decrypt_digest(&hash_ct, &client_key);
         let expected_hash = Sha256::digest(input);
         assert_eq!(&hash, expected_hash.as_slice());
     }
@@ -147,7 +147,7 @@ mod tests {
         let input = b"hello world".to_vec();
         let input_ct = trivial_encrypt_input(input.clone(), &server_key);
         let hash_ct = sha256_tfhe(&input_ct, &server_key);
-        let hash = decrypt_hash(&hash_ct, &client_key);
+        let hash = decrypt_digest(&hash_ct, &client_key);
         let expected_hash = Sha256::digest(input);
         assert_eq!(&hash, expected_hash.as_slice());
     }
@@ -158,7 +158,7 @@ mod tests {
         let input = b"abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu".to_vec();
         let input_ct = trivial_encrypt_input(input.clone(), &server_key);
         let hash_ct = sha256_tfhe(&input_ct, &server_key);
-        let hash = decrypt_hash(&hash_ct, &client_key);
+        let hash = decrypt_digest(&hash_ct, &client_key);
         let expected_hash = Sha256::digest(input);
         assert_eq!(&hash, expected_hash.as_slice());
     }
@@ -170,7 +170,7 @@ mod tests {
         let input = b"".to_vec();
         let input_ct = encrypt_input(input.clone(), &client_key);
         let hash_ct = sha256_tfhe(&input_ct, &server_key);
-        let hash = decrypt_hash(&hash_ct, &client_key);
+        let hash = decrypt_digest(&hash_ct, &client_key);
         let expected_hash = Sha256::digest(input);
         assert_eq!(&hash, expected_hash.as_slice());
     }
@@ -182,7 +182,7 @@ mod tests {
         let input = b"hello world".to_vec();
         let input_ct = encrypt_input(input.clone(), &client_key);
         let hash_ct = sha256_tfhe(&input_ct, &server_key);
-        let hash = decrypt_hash(&hash_ct, &client_key);
+        let hash = decrypt_digest(&hash_ct, &client_key);
         let expected_hash = Sha256::digest(input);
         assert_eq!(&hash, expected_hash.as_slice());
     }
@@ -194,7 +194,7 @@ mod tests {
         let input = b"abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu".to_vec();
         let input_ct = encrypt_input(input.clone(), &client_key);
         let hash_ct = sha256_tfhe(&input_ct, &server_key);
-        let hash = decrypt_hash(&hash_ct, &client_key);
+        let hash = decrypt_digest(&hash_ct, &client_key);
         let expected_hash = Sha256::digest(input);
         assert_eq!(&hash, expected_hash.as_slice());
     }
